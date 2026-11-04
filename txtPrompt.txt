@@ -1,0 +1,1 @@
+find src -type f -exec sh -c 'echo "===== {} ====="; cat "{}"; echo ""' \; > src.txt

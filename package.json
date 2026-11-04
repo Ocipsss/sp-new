@@ -1,0 +1,44 @@
+{
+  "name": "sinar-pagi",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@headlessui/vue": "^1.7.23",
+    "@supabase/supabase-js": "^2.118.0",
+    "big.js": "^7.0.1",
+    "bootstrap-icons": "^1.13.2",
+    "chart.js": "^4.5.1",
+    "dayjs": "^1.11.23",
+    "dexie": "^4.4.6",
+    "esc-pos-encoder": "^3.0.0",
+    "firebase": "^13.0.0",
+    "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
+    "lucide-vue-next": "^1.0.0",
+    "pinia": "^4.0.3",
+    "pinia-plugin-persistedstate": "^4.7.1",
+    "v-money3": "^3.26.1",
+    "vee-validate": "^4.15.1",
+    "vue": "^3.5.42",
+    "vue-chartjs": "^5.3.4",
+    "vue-router": "^5.4.0",
+    "vue-sonner": "^2.0.9",
+    "xlsx": "^0.18.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}

@@ -1,0 +1,76 @@
+Nah kan kebaca, 10561 baris, 81 file - aman.
+
+Gua udah bedah full source lu, ini projek SINAR PAGI POS - Vue 3 + Pinia + Dexie offline-first + Firebase Firestore + Cloudinary. Konsepnya warung/toko kelontong yang harus jalan offline di HP.
+
+Gua rangkum jujur ya, ada yang udah keren banget, ada yang PR gede.
+
+Yang udah solid
+
+Arsitektur rapi: db/repositories + services + composables + stores + views. Ini udah bener pattern repository, gak semua logic numpuk di komponen.
+Offline-first beneran: Dexie SinarPagiDB 15 table, soft delete deleted:true + synced:0 biar sync gak ilang pas hapus. Ini pinter.
+Sync logic: syncService.js push batch 400 doc, pull delta pake updatedAt > lastPullAt, plus bump meta/catalog version. Cloudinary juga offline-first imageLocal blob dulu baru upload pas online.
+Kasir UX: support barcode scanner, numpad, hold/resume cart, mode edit nota, paket rokok/permen, jasa seduh. Fitur toko beneran.
+
+PR kritis yang harus lu benerin dulu
+
+1. Security jebol - paling bahaya:
+Di src/services/authService.js lu pake VITE_FIREBASE_DEVICE_EMAIL + PASSWORD buat login Firebase dari frontend. Itu kebaca di bundle JS, siapa aja bisa inspect > dapet email pass > bisa nulis semua collection Firestore lu.
+
+Fix: ganti ke Anonymous Auth Firebase + Rules allow write if request.auth != null, atau bikin Cloud Function yang ngasih custom token per device.
+
+2. PIN Operator plain text:
+Di operatorRepository.js dan Firestore, pin kesimpen polos. Di operatorStore.js line 25 target.pin !== pinInput. Kalo DB bocor, kelar.
+
+Fix: hash minimal pake bcryptjs atau SHA-256, jangan simpen plain.
+
+3. Checkout gak atomic:
+Di kasirService.js lu db.transactions.add() dulu, baru loop db.transaction_items.add() dan db.products.update(). Kalo HP user mati di tengah, transaksi header kecatet tapi item gak kecatet, stok gak kepotong.
+
+Fix: bungkus semua pake Dexie transaction:
+await db.transaction('rw', db.transactions, db.transaction_items, db.products, db.members, db.cash_mutations, async () => {
+  // semua add/update disini
+})
+4. Resurrect data kehapus:
+pullAllFromCloud() di syncService.js bulkPut tanpa filter deleted. Jadi lu hapus produk di HP A (soft delete), tapi HP B masih narik dari cloud versi lama yang deleted:false, produk itu hidup lagi.
+
+Fix: filter where('deleted','!=', true) pas pull, atau cek dirtyIds juga buat deleted.
+
+5. localStorage + persist: true di semua store:
+kasirStore.js cart, pendingCarts lu persist ke localStorage. Cart bisa gede banget, limit localStorage cuma 5MB. Nanti mental QuotaExceededError.
+
+Fix: di productStore dan operatorStore aja yang persist. Kasir pake persist: { storage: sessionStorage } atau biarin RAM aja.
+
+6. confirm() 17x, alert() 5x:
+Di Sidebar.vue, Shopping.vue dll masih pake confirm('Akhiri shift?'). Di PWA Android itu nge-block UI, UX jelek.
+
+Fix: ganti ke vue-sonner dialog yang udah lu pake buat toast, bikin custom confirm modal.
+
+7. Cloudinary leak:
+Di cloudinaryService.js:
+const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'vezqidog'
+Fallback hardcoded itu kebaca di bundle. Hapus fallback, wajib pake env, kalo kosong throw error.
+
+8. crypto.randomUUID() gak ada fallback:
+Di HP jadul WebView < Android 9, crypto.randomUUID undefined, app crash pas checkout.
+
+Fix:
+const genId = () => globalThis.crypto?.randomUUID?.() ?? {Date.now()}-{Math.random().toString(36).slice(2)}
+Perf & Code Smell
+
+Search tanpa debounce: useKasir.js filteredProducts tiap ketik nge-filter full array products.value. Kalo produk lu udah 2000+, di HP kentang bakal ngelag. Kasih debounce 200ms + pake useFuse atau minimal computed + watchDebounced.
+Duplicate logic sorting: logic sort indexOf(q) ada di productStore.js dan useKasir.js sama persis. Extract jadi utils/search.js.
+updateUnsyncedCount N+1: loop 13 table + setTimeout 20ms tiap table. Mending 1x Promise.all.
+src/style.css kosong 22 char: berarti Tailwind lu gak kepurge? Cek.
+Marker GAMBAR - BARU: di file gabungan lu ada marker aneh itu, script penggabung src lu perlu dibersihin.
+
+Saran prioritas gua kalo jadi lu
+
+Benerin auth Firebase dulu (hari ini)
+Hash PIN operator
+Bikin checkout atomic + finance recalculate atomic
+Ganti confirm jadi modal + kasih debounce search
+Baru refactor virtual list di ProductsList.vue (408 baris) - itu komponen paling berat
+
+Mau gua bikinin checklist refactor + contoh fix code buat poin 1-3? Atau lu mau gua fokus audit 1 fitur dulu misal kasirService + financeRepo biar saldo gak miss?
+
+Bilang aja mau dilanjutin kemana.
