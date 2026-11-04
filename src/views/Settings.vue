@@ -51,9 +51,9 @@
       </label>
     </div>
 
-    <!-- Tombol Sync Manual - INI YANG IRIT -->
+    <!-- Tombol Sync Manual -->
     <div class="grid grid-cols-2 gap-2">
-      <button type="button" @click="handlePush" :disabled="syncStatus.isSyncing" class="py-3 bg-zinc-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5">
+      <button type="button" @click="handlePush" :disabled="syncStatus.isSyncing" class="py-3 bg-zinc-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition">
         <UploadCloud class="w-4 h-4" />
         <span>{{ syncStatus.isSyncing ? 'Menyinkron...' : `Push (${syncStatus.unsyncedCount})` }}</span>
       </button>
@@ -63,12 +63,12 @@
         type="button" 
         @click="handlePull" 
         :disabled="syncStatus.isSyncing" 
-        class="relative py-3 bg-white border border-zinc-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+        class="relative py-3 bg-white border border-zinc-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition"
       >
         <DownloadCloud class="w-4 h-4" />
         <span>Tarik Master</span>
 
-        <!-- Badge Angka Pembaruan (Hanya muncul jika ada update baru) -->
+        <!-- Badge Angka Pembaruan -->
         <span 
           v-if="syncStatus.pendingPullCount > 0" 
           class="absolute -top-2 -right-2 bg-amber-500 text-white font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-bounce"
@@ -98,7 +98,7 @@
     </div>
   </div>
 
-  <!-- Section 4: Backup File Lokal (AMAN) -->
+  <!-- Section 4: Backup File Lokal -->
   <div class="bg-white p-5 rounded-3xl border border-zinc-100 shadow-sm space-y-4">
     <div class="flex items-center gap-2 border-b border-zinc-50 pb-3">
       <Database class="w-5 h-5 text-zinc-900" />
@@ -110,7 +110,7 @@
     </div>
   </div>
 
-  <!-- Section 5: Dev Mode - Khusus pas develop di HP -->
+  <!-- Section 5: Dev Mode -->
   <div class="bg-amber-50 p-5 rounded-3xl border border-amber-200 shadow-sm space-y-3">
     <div class="flex items-center gap-2 border-b border-amber-200/60 pb-3">
       <HardDrive class="w-5 h-5 text-amber-600" />
@@ -136,8 +136,9 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { liveQuery } from 'dexie'
 import { db } from '../db/index.js'
-import { Store, Cloud, Printer, Database, Download, Upload, UploadCloud, DownloadCloud, HardDrive, Trash2, Type } from 'lucide-vue-next'
+import { Store, Cloud, Printer, Database, Download, Upload, UploadCloud, DownloadCloud, HardDrive, Trash2 } from 'lucide-vue-next'
 import { useSettings } from '../composables/useSettings.js'
+import { toast } from 'vue-sonner'
 import { 
   syncStatus, 
   syncRealtime, 
@@ -146,14 +147,56 @@ import {
   checkForCloudUpdates 
 } from '../services/syncService.js'
 
-const { form, loading, loadSettings, saveSettings, exportBackup, importBackup, resetTransactionsData, convertDataToUppercase } = useSettings()
+const { form, loading, loadSettings, saveSettings, exportBackup, importBackup, resetTransactionsData } = useSettings()
 const isOnline = ref(navigator.onLine)
 const updateOnlineState = () => { isOnline.value = navigator.onLine }
 const handleToggleSync = (e) => { syncRealtime.toggleAutoSync(e.target.checked) }
-const handlePush = async () => { await syncRealtime.pushLocalToCloud() }
-const handlePull = async () => { 
-  await pullDeltaFromCloud() 
+
+// Fungsi Push Paksa (Force Reset synced=0 lalu Push ke Supabase)
+const handlePush = async () => { 
+  try {
+    toast.info('Memulai persiapan sinkronisasi ke Supabase...')
+    
+    // 1. Reset status synced = 0 di semua 16 tabel IndexedDB lokal
+    const ALL_TABLES = [
+      'products',
+      'product_packages',
+      'categories',
+      'transactions',
+      'transaction_items',
+      'members',
+      'debt_payments',
+      'shopping_list',
+      'cash_accounts',
+      'cash_mutations',
+      'expenses',
+      'digital_transactions',
+      'services',
+      'units',
+      'operators',
+      'settings'
+    ]
+
+    for (const tableName of ALL_TABLES) {
+      if (db[tableName]) {
+        try {
+          await db[tableName].toCollection().modify({ synced: 0 })
+        } catch (e) {
+          console.warn(`[Settings Push] Skip table ${tableName}:`, e)
+        }
+      }
+    }
+
+    // 2. Jalankan Push ke Supabase
+    await syncRealtime.pushLocalToCloud()
+    toast.success('Berhasil mengirim seluruh data ke Supabase!')
+  } catch (err) {
+    console.error('[Settings Push Error]:', err)
+    toast.error('Gagal Push: ' + (err?.message || 'Terjadi kesalahan'))
+  }
 }
+
+const handlePull = async () => { await pullDeltaFromCloud() }
 const handlePullAll = async () => { await pullAllFromCloud() }
 
 let unsyncedSubscription = null
@@ -162,6 +205,15 @@ const TABLES_TO_SYNC = [
   'products',
   'product_packages',
   'categories',
+  'transactions',
+  'transaction_items',
+  'members',
+  'debt_payments',
+  'shopping_list',
+  'cash_accounts',
+  'cash_mutations',
+  'expenses',
+  'digital_transactions',
   'services',
   'units',
   'operators',
@@ -174,7 +226,7 @@ onMounted(() => {
   window.addEventListener('offline', updateOnlineState)
   checkForCloudUpdates()
 
-  // Real-time observer lokal menggunakan Dexie liveQuery sesuai tabel TABLES_TO_SYNC (0% kuota Firebase)
+  // Real-time observer lokal menggunakan Dexie liveQuery
   unsyncedSubscription = liveQuery(async () => {
     if (!db) return 0
     let total = 0
@@ -184,7 +236,7 @@ onMounted(() => {
         const count = await db[tableName].where('synced').equals(0).count()
         total += count
       } catch (e) {
-        // Abaikan jika indeks synced belum siap di tabel tertentu
+        // Abaikan jika indeks synced belum siap
       }
     }
     return total

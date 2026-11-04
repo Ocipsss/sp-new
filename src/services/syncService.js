@@ -195,16 +195,33 @@ export const syncRealtime = {
         shouldBumpCatalog = true
 
         const payload = unsynced.map(item => {
-          const { synced, imageLocal, ...clean } = item
+          const clean = { ...item }
+
+          // Sanitasi kolom lokal yang tidak ada pada schema Supabase
+          delete clean.synced
+          delete clean.imageLocal
+          delete clean.imagePublicId
+          delete clean.isPublished
+          delete clean.pack_price
+          delete clean.pack_unit
+          delete clean.pack_qty
+
+          // Pemasikan tipe data numerik
+          if (clean.price !== undefined) clean.price = Number(clean.price) || 0
+          if (clean.buyPrice !== undefined) clean.buyPrice = Number(clean.buyPrice) || 0
+          if (clean.stock !== undefined) clean.stock = Number(clean.stock) || 0
+
           return clean
         })
 
         const { error } = await supabase.from(tableName).upsert(payload)
 
         if (!error) {
-          await db[tableName].bulkUpdate(unsynced.map(c => ({ key: c.id, changes: { synced: 1 } })))
+          const updates = unsynced.map(c => ({ key: c.id, changes: { synced: 1 } }))
+          await db[tableName].bulkUpdate(updates)
+          console.log(`[Sync Success] ${tableName}: ${unsynced.length} terkirim.`)
         } else {
-          console.error(`[Sync] Error upsert ${tableName}:`, error)
+          console.error(`[Sync Error] Gagal upsert tabel ${tableName}:`, error.message, error.details)
         }
       }
 
@@ -213,7 +230,7 @@ export const syncRealtime = {
       }
       syncStatus.lastSyncedAt = dayjs().format('HH:mm')
     } catch (e) {
-      console.warn('[Sync] Push manual gagal:', e?.message)
+      console.error('[Sync] Push manual gagal:', e?.message || e)
     } finally {
       isSyncing = false
       syncStatus.isSyncing = false
